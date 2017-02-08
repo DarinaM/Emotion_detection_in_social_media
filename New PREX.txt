@@ -1,0 +1,505 @@
+import numpy as np
+import random
+import re
+import string
+import nltk
+from nltk.corpus import  CategorizedPlaintextCorpusReader
+from operator import itemgetter
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.naive_bayes import MultinomialNB, BernoulliNB
+from sklearn import metrics
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.model_selection import train_test_split, cross_val_score, cross_val_predict
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+from sklearn.neural_network import MLPClassifier
+from texttable import Texttable
+import itertools
+import matplotlib.pyplot as plt
+import pickle
+
+#RegEx expresions for data and feature extraction  
+data_emo = CategorizedPlaintextCorpusReader('C:/DATA/', r'.*\.csv', cat_pattern=r'(\w+)/*')
+
+documents = [(data_emo.raw(fileid), category)
+    for category in data_emo.categories()
+    for fileid in data_emo.fileids(category)]
+
+# Grouping emotions by ctegories
+ag_emotion = [document for document,labl in documents if labl == 'emo_ag']
+dg_emotion = [document for document,labl in documents if labl == 'emo_dg']
+fr_emotion = [document for document,labl in documents if labl == 'emo_fr']
+hp_emotion = [document for document,labl in documents if labl == 'emo_hp']
+ne_emotion = [document for document,labl in documents if labl == 'emo_ne']
+sd_emotion = [document for document,labl in documents if labl == 'emo_sd']
+sp_emotion = [document for document,labl in documents if labl == 'emo_sp']
+
+train_sz = 0.7
+test_sz = 1 - train_sz
+size = 1
+
+# Defining training and testing size for each emotion category
+ag_train_sz = int(len(ag_emotion)*train_sz)
+dg_train_sz = int(len(dg_emotion)*train_sz)
+fr_train_sz = int(len(fr_emotion)*train_sz)
+hp_train_sz = int(len(hp_emotion)*train_sz)
+ne_train_sz = int(len(ne_emotion)*train_sz)
+sd_train_sz = int(len(sd_emotion)*train_sz)
+sp_train_sz = int(len(sp_emotion)*train_sz)
+
+ag_labels = [0]*len(ag_emotion)
+dg_labels = [1]*len(dg_emotion)
+fr_labels = [2]*len(fr_emotion)
+hp_labels = [3]*len(hp_emotion)
+ne_labels = [4]*len(ne_emotion)
+sd_labels = [5]*len(sd_emotion)
+sp_labels = [6]*len(sp_emotion) 
+
+ag_all = int(len(ag_emotion)*size)
+dg_all = int(len(dg_emotion)*size)
+fr_all = int(len(fr_emotion)*size)
+hp_all = int(len(hp_emotion)*size)
+ne_all = int(len(ne_emotion)*size)
+sd_all = int(len(sd_emotion)*size)
+sp_all = int(len(sp_emotion)*size)
+
+# Creating overall set for each group of emotions
+ag_all_set = ag_emotion[:ag_all]
+ag_all_labels = ag_labels[:ag_all]
+dg_all_set = dg_emotion[:dg_all]
+dg_all_labels = dg_labels[:dg_all]
+fr_all_set = fr_emotion[:fr_all]
+fr_all_labels = fr_labels[:fr_all]
+hp_all_set = hp_emotion[:hp_all]
+hp_all_labels = hp_labels[:hp_all]
+ne_all_set = ne_emotion[:ne_all]
+ne_all_labels = ne_labels[:ne_all]
+sd_all_set = sd_emotion[:sd_all]
+sd_all_labels = sd_labels[:sd_all]
+sp_all_set = sp_emotion[:sp_all]
+sp_all_labels = sp_labels[:sp_all]
+
+# Creating training set for each group of emotions
+ag_train_set = ag_emotion[:ag_train_sz]
+ag_train_labels = ag_labels[:ag_train_sz]
+dg_train_set = dg_emotion[:dg_train_sz]
+dg_train_labels = dg_labels[:dg_train_sz]
+fr_train_set = fr_emotion[:fr_train_sz]
+fr_train_labels = fr_labels[:fr_train_sz]
+hp_train_set = hp_emotion[:hp_train_sz]
+hp_train_labels = hp_labels[:hp_train_sz]
+ne_train_set = ne_emotion[:ne_train_sz]
+ne_train_labels = ne_labels[:ne_train_sz]
+sd_train_set = sd_emotion[:sd_train_sz]
+sd_train_labels = sd_labels[:sd_train_sz]
+sp_train_set = sp_emotion[:sp_train_sz]
+sp_train_labels = sp_labels[:sp_train_sz]
+
+# Creating testing set for each group of emotions
+ag_test_set = ag_emotion[ag_train_sz:]
+ag_test_labels = ag_labels[ag_train_sz:]
+dg_test_set = dg_emotion[dg_train_sz:]
+dg_test_labels = dg_labels[dg_train_sz:]
+fr_test_set = fr_emotion[fr_train_sz:]
+fr_test_labels = fr_labels[fr_train_sz:]
+hp_test_set = hp_emotion[hp_train_sz:]
+hp_test_labels = hp_labels[hp_train_sz:]
+ne_test_set = ne_emotion[ne_train_sz:]
+ne_test_labels = ne_labels[ne_train_sz:]
+sd_test_set = sd_emotion[sd_train_sz:]
+sd_test_labels = sd_labels[sd_train_sz:]
+sp_test_set = sp_emotion[sp_train_sz:]
+sp_test_labels = sp_labels[sp_train_sz:]
+
+# Creating overall training and testing set 
+train_set = ag_train_set + dg_train_set + fr_train_set + hp_train_set + ne_train_set + sd_train_set + sp_train_set
+test_set = ag_test_set + dg_test_set + fr_test_set + hp_test_set + ne_test_set + sd_test_set + sp_test_set
+training_labels = ag_train_labels + dg_train_labels + fr_train_labels + hp_train_labels + ne_train_labels + sd_train_labels + sp_train_labels
+test_labels = ag_test_labels + dg_test_labels + fr_test_labels + hp_test_labels + ne_test_labels + sd_test_labels + sp_test_labels
+all_set = ag_all_set + dg_all_set + fr_all_set + hp_all_set + ne_all_set + sd_all_set + sp_all_set
+all_labels = ag_all_labels + dg_all_labels + fr_all_labels +hp_all_labels + ne_all_labels + sd_all_labels + sp_all_labels
+
+random.shuffle(train_set)
+random.shuffle(test_set)
+random.shuffle(all_set)
+
+'''
+X_train = np.array([''.join(el) for el in train_set])
+X_test = np.array([''.join(el) for el in test_set]) 
+
+y_train = np.array(training_labels)
+y_test = np.array(test_labels) 
+'''
+
+X = np.array([''.join(el) for el in all_set]) 
+y = np.array(all_labels)
+
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, random_state = 10)
+
+# Defining stop words 
+stop_w = TfidfVectorizer(min_df=2, ngram_range=(1, 2), stop_words='english', 
+                             strip_accents='unicode', norm='l2',decode_error="ignore")
+
+X_train = stop_w.fit_transform(X_train)
+X_test = stop_w.transform(X_test)
+X = stop_w.transform (X)
+
+print (X_train.shape)
+print (X_test.shape)
+print(X.shape)
+
+########################## Counting results for NB Classifier ##################################
+NB_classifier = MultinomialNB(alpha=0.25,fit_prior=True).fit(X_train,y_train)
+NB_predicted = cross_val_predict(NB_classifier, X_test, y_test, cv=10)
+
+NB_A = (metrics.accuracy_score(y_test, NB_predicted)*100)
+NB_Macro_P = (metrics.precision_score(y_test, NB_predicted, average='macro')*100)
+NB_Macro_R = (metrics.recall_score(y_test, NB_predicted, average='macro')*100)
+NB_Macro_F = (metrics.f1_score(y_test, NB_predicted, average='macro')*100)
+NB_Micro_P = (metrics.precision_score(y_test, NB_predicted, average='micro')*100)
+NB_Micro_R = (metrics.recall_score(y_test, NB_predicted, average='micro')*100)
+NB_Micro_F = (metrics.f1_score(y_test, NB_predicted, average='micro')*100)
+
+fpr, tpr, thresholds = metrics.roc_curve(y_test, NB_predicted, pos_label=2)
+NB_AUC = (metrics.auc(fpr, tpr)*100)
+######################### Presenting results ###################################################
+table = Texttable()
+print ('Naive Bayes Classifier measures: ')
+table.add_rows([['Measure','Result'], 
+            ['Naive Bayes ACCURACY ', NB_A],
+            ['Error Rate ', 100-NB_A],
+            ['The MACRO Precission ', NB_Macro_P], 
+            ['The MACRO Recall ', NB_Macro_R],
+            ['The MACRO FScore ', NB_Macro_F],
+            ['The MICRO Precission ', NB_Micro_P],
+            ['The MICRO Recall ', NB_Micro_R],
+            ['The MICRO FScore ', NB_Micro_F],
+            ['Area Under Curve', NB_AUC]])
+print (table.draw())
+
+# Detailed report for each emotion (for each classification group)
+print ('\n Detailed classification report for Naive Bayes Classifier:')
+print (classification_report(y_test, NB_predicted))
+
+#################################### Confusion Matrix ##########################################
+# Building a confusion Matrix
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix for, without normalization')
+
+    print(cm)
+
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, cm[i, j],
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True labele of emotion')
+    plt.xlabel('Predicted label of emotion')
+
+# Compute confusion matrix
+conf_m = confusion_matrix(y_test, NB_predicted)
+np.set_printoptions(precision=2)
+# Plot non-normalized confusion matrix for emotions
+plt.figure()
+plot_confusion_matrix(conf_m, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'],
+                      title='Confusion matrix for Naive Bayes Classifier, without normalization')
+
+# Plot normalized confusion matrix for emotions
+plt.figure()
+plot_confusion_matrix(conf_m, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'], 
+                      normalize=True,
+                      title='Normalized confusion matrix for Naive Bayes')
+plt.show()
+################ Counting results for K nierest neighbors Classifier ########################
+KNN_classifier = KNeighborsClassifier(n_neighbors=5, algorithm='auto', metric='minkowski', leaf_size=30).fit(X_train,y_train)
+KNN_predicted = cross_val_predict(KNN_classifier, X_test, y_test, cv=10)
+
+KNN_A = (metrics.accuracy_score(y_test, KNN_predicted)*100)
+KNN_Macro_P = (metrics.precision_score(y_test, KNN_predicted, average='macro')*100)
+KNN_Macro_R = (metrics.recall_score(y_test, KNN_predicted, average='macro')*100)
+KNN_Macro_F = (metrics.f1_score(y_test, KNN_predicted, average='macro')*100)
+
+KNN_Micro_P = (metrics.precision_score(y_test, KNN_predicted, average='micro')*100)
+KNN_Micro_R = (metrics.recall_score(y_test, KNN_predicted, average='micro')*100)
+KNN_Micro_F = (metrics.f1_score(y_test, KNN_predicted, average='micro')*100)
+
+fpr, tpr, thresholds = metrics.roc_curve(y_test, KNN_predicted, pos_label=2)
+KNN_AUC = (metrics.auc(fpr, tpr)*100)
+
+######################### Presenting results ###################################################
+table = Texttable()
+print ('KNN Classifier measures: ')
+table.add_rows([['Measure','Result'], 
+            ['KNN ACCURACY ', KNN_A], 
+            ['Error Rate', 100 - KNN_A],
+            ['The MACRO Precission ', KNN_Macro_P], 
+            ['The MACRO Recall ', KNN_Macro_R],
+            ['The MACRO FScore ', KNN_Macro_F],
+            ['The MICRO Precission ', KNN_Micro_P],
+            ['The MICRO Recall ', KNN_Micro_R],
+            ['The MICRO FScore ', KNN_Micro_F],
+            ['Area Under Curve ', KNN_AUC]])
+print (table.draw())
+print ('\n Detailed classification report for KNN Classifier:')
+print (classification_report(y_test, KNN_predicted))
+#################################### Confusion Matrix ##########################################
+conf_mKNN = confusion_matrix(y_test, KNN_predicted)
+np.set_printoptions(precision=2)
+plt.figure()
+plot_confusion_matrix(conf_mKNN, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'],
+                      title='Confusion matrix for KNN Classifier, without normalization')
+plt.figure()
+plot_confusion_matrix(conf_mKNN, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'], 
+                      normalize=True,
+                      title='Normalized confusion matrix for KNN')
+plt.show()
+#################### Counting results for Random Forest Classifier ##########################
+RF_classifier = RandomForestClassifier(n_estimators=40, criterion='gini').fit(X_train,y_train)
+RF_predicted = cross_val_predict(RF_classifier, X_test, y_test, cv=10)
+
+RF_A = (metrics.accuracy_score(y_test, RF_predicted)*100)
+RF_Macro_P = (metrics.precision_score(y_test, RF_predicted, average='macro')*100)
+RF_Macro_R = (metrics.recall_score(y_test, RF_predicted, average='macro')*100)
+RF_Macro_F = (metrics.f1_score(y_test, RF_predicted, average='macro')*100)
+
+RF_Micro_P = (metrics.precision_score(y_test, RF_predicted, average='micro')*100)
+RF_Micro_R = (metrics.recall_score(y_test, RF_predicted, average='micro')*100)
+RF_Micro_F = (metrics.f1_score(y_test, RF_predicted, average='micro')*100)
+
+
+fpr, tpr, thresholds = metrics.roc_curve(y_test, RF_predicted, pos_label=2)
+RF_AUC = (metrics.auc(fpr, tpr)*100)
+
+######################### Presenting results ###################################################
+table = Texttable()
+print ('Random Forest Classifier measures: ')
+table.add_rows([['Measure','Result'], 
+            ['Random Forest ACCURACY ', RF_A], 
+            ['Error Rate', 100-RF_A],
+            ['The MACRO Precission ', RF_Macro_P], 
+            ['The MACRO Recall ', RF_Macro_R],
+            ['The MACRO FScore ', RF_Macro_F],
+            ['The MICRO Precission ', RF_Micro_P],
+            ['The MICRO Recall ', RF_Micro_R],
+            ['The MICRO FScore ', RF_Micro_F],
+            ['Area Under Curve ', RF_AUC]])
+print (table.draw())
+print ('\n Detailed classification report for Random Forest Classifier:')
+print (classification_report(y_test, RF_predicted))
+#################################### Confusion Matrix ##########################################
+conf_mRF = confusion_matrix(y_test, RF_predicted)
+np.set_printoptions(precision=2)
+plt.figure()
+plot_confusion_matrix(conf_mRF, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'],
+                      title='Confusion matrix for Random Forest, without normalization')
+plt.figure()
+plot_confusion_matrix(conf_mRF, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'], 
+                      normalize=True,
+                      title='Normalized confusion matrix for Random Forest')
+plt.show()
+################### Counting results for Neuron Network Classifier ##########################
+NN_classifier = MLPClassifier(hidden_layer_sizes=150, activation='logistic', solver='adam').fit(X_train,y_train)
+NN_predicted = cross_val_predict(NN_classifier, X_test, y_test, cv=10)
+
+NN_A = (metrics.accuracy_score(y_test, NN_predicted)*100)
+NN_Macro_P = (metrics.precision_score(y_test, NN_predicted, average='macro')*100)
+NN_Macro_R = (metrics.recall_score(y_test, NN_predicted, average='macro')*100)
+NN_Macro_F = (metrics.f1_score(y_test, NN_predicted, average='macro')*100)
+
+NN_Micro_P = (metrics.precision_score(y_test, NN_predicted, average='micro')*100)
+NN_Micro_R = (metrics.recall_score(y_test, NN_predicted, average='micro')*100)
+NN_Micro_F = (metrics.f1_score(y_test, NN_predicted, average='micro')*100)
+
+fpr, tpr, thresholds = metrics.roc_curve(y_test, NN_predicted, pos_label=2)
+NN_AUC = (metrics.auc(fpr, tpr)*100)
+######################### Presenting results ###################################################
+table = Texttable()
+print ('Neural Network measures: ')
+table.add_rows([['Measure','Result'], 
+            ['Neural Network ACCURACY ', NN_A],
+            ['Error Rate', 100-NN_A], 
+            ['The MACRO Precission ', NN_Macro_P], 
+            ['The MACRO Recall ', NN_Macro_R],
+            ['The MACRO FScore ', NN_Macro_F],
+            ['The MICRO Precission ', NN_Micro_P],
+            ['The MICRO Recall ', NN_Micro_R],
+            ['The MICRO FScore ', NN_Micro_F], 
+            ['Area Under Curve', NN_AUC]])
+print (table.draw())
+print ('\n Detailed classification report for Neural Network Classifier:')
+print (classification_report(y_test, NN_predicted))
+#################################### Confusion Matrix ##########################################
+conf_mNN = confusion_matrix(y_test, NN_predicted)
+np.set_printoptions(precision=2)
+plt.figure()
+plot_confusion_matrix(conf_mNN, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'],
+                      title='Confusion matrix for Neural Network, without normalization')
+plt.figure()
+plot_confusion_matrix(conf_mNN, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'], 
+                      normalize=True,
+                      title='Normalized confusion matrix for Neural Network')
+plt.show()
+###################         Counting results for My Classifier     ##########################
+NB = MultinomialNB(alpha=0.25,fit_prior=True)
+KN = KNeighborsClassifier(n_neighbors=5, algorithm='auto', metric='minkowski', leaf_size=30)
+NN = MLPClassifier(hidden_layer_sizes=150, activation='logistic', solver='adam')
+RF = RandomForestClassifier(n_estimators=40, criterion='gini')
+
+My_classifier = VotingClassifier(estimators=[
+        ('Random Forest', RF), ('Neuron Network', NN), ('Naive Bayes', NB), 
+        ('Nearest Neighbors', KN)], voting='hard', weights=[2, 2, 1, 2])
+
+My_classifier = My_classifier.fit(X_train, y_train)
+My_predicted = (cross_val_predict(My_classifier, X_test, y_test, cv=10))
+
+My_A = (metrics.accuracy_score(y_test, My_predicted)*100)
+
+My_Macro_P = (metrics.precision_score(y_test, My_predicted, average='macro')*100)
+My_Macro_R = (metrics.recall_score(y_test, My_predicted, average='macro')*100)
+My_Macro_F = (metrics.f1_score(y_test, My_predicted, average='macro')*100)
+
+My_Micro_P = (metrics.precision_score(y_test, My_predicted, average='micro')*100)
+My_Micro_R = (metrics.recall_score(y_test, My_predicted, average='micro')*100)
+My_Micro_F = (metrics.f1_score(y_test, My_predicted, average='micro')*100)
+
+fpr, tpr, thresholds = metrics.roc_curve(y_test, My_predicted, pos_label=2)
+My_AUC = (metrics.auc(fpr, tpr)*100)
+
+######################### Presenting results ###################################################
+table = Texttable()
+print ('My Classifier measures: ')
+table.add_rows([['Measure','Result'], 
+            ['My ACCURACY ', My_A],
+            ['Error Rate', 100-My_A], 
+            ['The MACRO Precission ', My_Macro_P], 
+            ['The MACRO Recall ', My_Macro_R],
+            ['The MACRO FScore ', My_Macro_F],
+            ['The MICRO Precission ', My_Micro_P],
+            ['The MICRO Recall ', My_Micro_R],
+            ['The MICRO FScore ', My_Micro_F],
+            ['Area Under', My_AUC]])
+print (table.draw())
+
+# Detailed report for each emotion (for each classification group)
+print ('\n Detailed classification report for My Classifier:')
+print (classification_report(y_test, My_predicted))
+
+#################################### Confusion Matrix ##########################################
+conf_My = confusion_matrix(y_test, My_predicted)
+np.set_printoptions(precision=2)
+plt.figure()
+plot_confusion_matrix(conf_My, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'],
+                      title='Confusion matrix for My Classifier, without normalization')
+plt.figure()
+plot_confusion_matrix(conf_My, classes=['Anger', 'Disgust', 
+                                           'Fear', 'Happiness', 
+                                           'Neutral', 'Sadness', 'Surprise'], 
+                      normalize=True,
+                      title='Normalized confusion matrix for My Classifier')
+plt.show()
+############################### Accuracy comparison #########################################
+N = 5
+means = (NB_A, KNN_A, RF_A, NN_A, My_A)
+std = (3, 3, 5, 3, 4)
+ind = np.arange(N)  # the x locations for the groups
+width = 0.30       # the width of the bars
+fig, ax = plt.subplots()
+rects = ax.bar(ind, means, width, color='#1cbeb0', yerr=std)
+# add some text for labels, title and axes ticks
+ax.set_ylabel('Accuracy')
+ax.set_title('Algorithms \n Accuracy comparison')
+ax.set_xticks(ind + width)
+ax.set_xticklabels(('Naive Bayes', 'K Niarest Neighbors', 'Random Forest', 'Neural Network', 'My Classifier'), 
+                   size='small', ha='right', rotation = 15)
+
+def autolabel(rects):
+    for rect in rects:
+        height = rect.get_height()
+        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                '%d' % int(height),
+                ha='center', va='bottom')
+autolabel(rects)
+plt.show()
+####################### Graphical Measures comparison         ###############################
+N = 5
+ind = np.arange(N) 
+width = 0.15       
+fig, ax = plt.subplots()
+
+ac_means = (NB_A, KNN_A, RF_A, NN_A, My_A)
+ac_std = (3, 3, 5, 3, 4)
+ac_rects = plt.bar(ind, ac_means, width, color='#929292', yerr=ac_std)
+
+pr_mac_means = (NB_Macro_P, KNN_Macro_P, RF_Macro_P, NN_Macro_P, My_Macro_P)
+pr_mac_std =(3, 3, 3, 3, 4)
+pr_mac_rects = plt.bar(ind + width, pr_mac_means, width, color='#aaaaaa', yerr=pr_mac_std)
+
+rc_mac_means = (NB_Macro_R, KNN_Macro_R, RF_Macro_R, NN_Macro_R, My_Macro_R)
+rc_mac_std =(3, 3, 3, 3, 4)
+rc_mac_rects = plt.bar(ind + width*2, rc_mac_means, width, color='#bbbbbb', yerr=rc_mac_std)
+
+f_mac_means = (NB_Macro_F, KNN_Macro_F, RF_Macro_F, NN_Macro_F, My_Macro_F)
+f_mac_std =(3, 3, 3, 3, 4)
+f_mac_rects = plt.bar(ind + width*3, f_mac_means, width, color='#cccccc', yerr=f_mac_std)
+
+auc_means = (NB_AUC, KNN_AUC, RF_AUC, NN_AUC, My_AUC)
+auc_std =(3, 3, 3, 3, 4)
+auc_rects = plt.bar(ind + width*4, auc_means, width, color='#e5e5e5', yerr=auc_std)
+###
+ax.set_ylabel('Measure evaluation')
+ax.set_title('Algorithms \n Measures comparison')
+ax.set_xticks(ind + width)
+ax.set_xticklabels(('Naive Bayes', 'K Niarest Neighbors', 'Random Forest', 'Neural Network', 'My Classifier'), ha='center')
+
+ax.legend((ac_rects[0], pr_mac_rects[0], rc_mac_rects[0], f_mac_rects[0], auc_rects[0]), 
+          ('Accuracy', 'Macro Precision', 'Macro Recall', 'Macro FScore', 'AUC'))
+
+def autolabel(rects):
+    for rect in rects:
+        height = rect.get_height()
+        ax.text(rect.get_x() + rect.get_width()/2., 1.05*height,
+                '%d' % int(height),
+                ha='center', va='bottom')
+autolabel(ac_rects)
+autolabel(pr_mac_rects)
+autolabel(rc_mac_rects)
+autolabel(f_mac_rects)
+autolabel(auc_rects)
+plt.show()
+########################################################################################################
